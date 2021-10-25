@@ -1,0 +1,127 @@
+==:: TECH ::==
+UE4 (4.27.1) + nejaka noise kniznica z Marketplacu
+
+s UE4 som nikdy predtym nerobil, takze mi neprimerane vela casu zabralo ucenie sa/bojovanie s enginom,
+ergo som nestihol naimplementovat vsetky poziadavky. ale tak isto som predtym nevidel ani Unity, a v UE4 
+je C++ (narozdiel od C# u Unity, ktore neovladam) + GripDigital je tiez s UE4 :), tak som sa vydal touto cestou.
+
+
+==:: OMACKY ::==
+zacal som podla mna celkom schopne s logikou blokov a ovladanim a interakciou hraca s blokmi, ale stravil som
+tym nakoniec prilis vela casu a tym padom mi nezostal dostatok casu na tie vacsie challenge, ktore su nekonecny
+svet a serializacia. to potom vidno aj na designe tej logiky a class - vidno ze ten kod ktory je viac napatlany
+som robil na poslednu chvilu bez nejakeho predom urceneho jasneho planu.
+
+priznavam ze tento aspekt som uplne nevychytal a nevyhradil som si na zaciatku dostatok casu na spoznanie
+UE viac do hlbky a navrhnutie vsetkych systemov a ich interakcii na zaklade celistvejsich enginovych znalosti.
+
+"architekturalne" som k tomu pristupoval tak, ze vsetka logika je na pevno v C++, zatial co vhodne parametre
+ktore ma zmysel pre nejakeho designera ovladat.
+
+nestihol som naimplementovat ziadne UI, ale v Output logu je hlasena zmena modu (destroying/placing) aj zmena
+bloku ktory chcem vytvorit
+
+==:: OVLADANIE ::==
+pohyb: WASD + mys, klasika (vykradnute z 1st person templaty)
+LMB: interakcia podla zvoleneho modu
+	- mod Destroying (default): nicim blok ktory mam highlightnuty
+	- mod Placing: vytvaram zvoleny blok (default blok 0)
+RMB: zmena modu interakcie (vidno v logu)
+kolecko: v Placing mode zmena zvoleneho bloku ktory chcem vytvorit (nadefinovane v arrayi Placeable Blocks v BP gamemodu)
+	- defaulty: 0 == Dirt, 1 == Rock, 2 == Wood, 3 == Glowing Rock
+5: run-time refresh sveta s random seedom (unix timestamp)
+
+
+==:: FEATURE CHECKLIST ::==
+- bloky [V]
+	- 4 rozne typy (base C++ class, konkretne bloky cez BP) [V]
+	- rozdielne mateiraly [V]
+	- nicitelne [V]
+	- rozdielne casy nicenia (logika v C++, parametre v BP) [V]
+	- proceduralny vzhlad [V]
+		- material zasnezeny nad urcitu vysku [V]
+		- hlina moze zazelenat (defaultne spawnnuta hlina je zelena, akoze trava) [V]
+	- vizualny feedback [V]
+		- highlight bloku na ktory sa pozeram [V]
+		- fazy nicenia [V]
+		- "dummy" blok ktory ukaze kde sa vytvori novy blok [V]
+- hrac [V]
+	- moze nicit bloky [V]
+	- moze pridavat bloky [V]
+		- v pridavacom rezime sa zobrazi wireframe ako guida [V]
+		- moznost volby pridaneho bloku [V]
+- svet [v]
+	- proceduralny generator [V]
+		- noise backend v C++ [V]
+		- parametre vyvedene do BP [V]
+	- moznost in-game resetu [V]
+	- nedostatok: generujem iba povrch, ak je skok medzi dvoma blokmi prilis strmy (tzn. > 1 blok), tak sa tam objavi "diera"
+	- hlbka [X] == generuju sa iba data vrchnej vrstvy
+	- nekonecny svet [X] 
+		- ciastocna implementacia, ale chybna: hra pada lebo eventualne vypocitam nespravny index do pola blokov
+		- predtym existujuce bloky (Actory) sa ne-Destroy()-uju, neviem preco
+		- niekedy segfault pri ukonceni hry v destruktore triedy, ktora ma raw pointer na Actora a vola nan Destroy() ak je non-null
+			- mozno Actor je uvolneny este predtym, nez stihnem zavolat Destroy() v tej classe,
+			  to by vysvetlovalo, ze to klakne na volani non-null, ale napriek tomu nevalidneho pointru
+			- sorry za raw pointer, kym som si uvedomil ze by sa mi hodil nejaky unique_ptr, tak som to uz nestihal prekopat
+
+- serializacia/deserializacia [X]
+- UI [X]
+
+
+==:: NAVRHY CHYBAJUCICH IMPLEMENTACII ::==
+- svet:
+	- storage (implementovane):
+		- "2D" pole blokovych dat: pozicie, typ, ptr na Actor
+		- "2D" lebo v skutocnosti 1D, ale chapeme sa
+		- pristup k datam cez ChunkManager classu (GameState)
+	- idea nekonecneho sveta (nedokoncena implementacia):
+		- v BP mam vyvedeny chunk "radius", tzn kolko chunkov do stran a diagonalne
+		  chcem mat v jednom case v storagi
+		- viem do ktoreho chunku som sa posunul relativne voci tomu, kde som predtym bol
+		- podla tej delty viem, ktore chunky pred sebou potrebujem vygenerovat
+		- tym padom viem aj ktore mozem zo storage zahodit (tie "oproti")
+		- vygenerujem si chunky, existujuce data v storage popresuvam tak, aby
+		  sa tie "oproti" prebublali az na miesto, kam patria nove chunky, tym padom ich prepisem,
+		  destruktor starych chunkovych dat sa postara o to, aby sa nepotrebni Actori podeletili
+		- vygenerujem novych actorov pre nove chunkove data, prepojim ich
+	- idea generovania do hlbky (neimplementovane)
+		- tbh uplne si niesom isty ako by to fungovalo interne
+		- ale az by to fungovalo, tak Actori dalekych (delta > 1 chunk) blokov iba povrchovo,
+		  Actori blizkych (delta <= 1 chunk) aspon ciastocne do hlbky
+- serializacia:
+	- automaticky vzdy pri prichode do ineho chunku
+	- globalne veci (nacita sa naraz):
+		- generatorovy seed
+		- hracova pozicia
+		- zoznam "dirty" chunkov
+	- chunky (nacita sa on demand):
+		- znacit si este v pamati, ktore chunky su "dirty" - tzn. poznamenane hracom
+		- ukladat plne data iba tychto "dirty" chunkov
+			- suradnice chunku
+			- data blokov
+		- ak by sme mali generovat v nekonecnom svete nejaky chunk a zistime v zozname
+		  ze je "dirty", tak ho miesto toho vytiahneme zo suboru, tym padom ulozime 
+		  hracove zmeny
+
+
+==:: MOZNE OPTIMALIZACIE ::==
+- (stabilita) momentalne kazdy pointer co mam je raw
+	- riesenie: vymenit za {unique,shared}_ptr ekvivalent v UE4, podla nutnosti
+	- nestihol som vyskumat ani prekopat
+
+- (performance) momentalne sa vsetko deje v jednom threade == lag jak svina pri generovani chunkov
+	- riesenie: generacia/serializacia/deserializacia chunkovych dat v zvlast worker threadoch
+		- idealne long-living, nech nam zasa overhead vytvarania/nicenia threadov 
+		  zbytocne nezere CPU
+		- TQueue je non-blocking, takze by sluzila ako fronta do ktorej by GameMode vkladal
+		  chunky na vygenerovanie, thready by si z nej brali a vygenerovane data rovno zapisali
+		  do ChunkManager storagu (samozrejme osetrene mutexom), potom game thread by pri zmene
+		  dat nacitanych blokov vytvoril novych Actorov blokov, stare by sa zrusili
+	- pokus bol, ale asi som este uplne nepochopil ako presne sa to robi, lebo mi to nefungovalo spravne
+
+- (performance?) casto s chunkovymi datami pracujem tak, ze prepisujem hodnoty
+	- riesenie: nejake manipulacie priamo z pamatou? nejake memory swapy???
+
+- (performance) prilis vela OOP na pozadi
+	- riesenie: naucit sa lepsie data-oriented programming :D
