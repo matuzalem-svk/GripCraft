@@ -1,0 +1,6 @@
+!.gitignore
+!README
+!GripCraft.uproject
+!Config/
+!Content/
+!Source/
